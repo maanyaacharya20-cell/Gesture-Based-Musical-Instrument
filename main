@@ -1,0 +1,183 @@
+import cv2
+import numpy as np
+import pygame
+import time
+import mediapipe as mp
+import threading
+
+pygame.mixer.init()
+
+SOUND_PATHS = {
+    'piano': {
+        'RIGHT_THUMB_DOWN': ("piano/Cinematic Piano/C4.wav", "C4"),
+        'RIGHT_INDEX_DOWN': ("piano/Cinematic Piano/D4.wav", "D4"),
+        'RIGHT_MIDDLE_DOWN': ("piano/Cinematic Piano/E4.wav", "E4"),
+        'RIGHT_RING_DOWN': ("piano/Cinematic Piano/F4.wav", "F4"),
+        'RIGHT_PINKY_DOWN': ("piano/Cinematic Piano/G4.wav", "G4"),
+
+        'LEFT_THUMB_DOWN': ("piano/Cinematic Piano/C3.wav", "C3"),
+        'LEFT_INDEX_DOWN': ("piano/Cinematic Piano/D3.wav", "D3"),
+        'LEFT_MIDDLE_DOWN': ("piano/Cinematic Piano/E3.wav", "E3"),
+        'LEFT_RING_DOWN': ("piano/Cinematic Piano/F3.wav", "F3"),
+        'LEFT_PINKY_DOWN': ("piano/Cinematic Piano/G3.wav", "G3"),
+
+        'RIGHT_INDEX_MIDDLE_DOWN': ("piano/Cinematic Piano/A4.wav", "A4"),
+        'RIGHT_MIDDLE_RING_DOWN': ("piano/Cinematic Piano/Bb4.wav", "Bb4"),
+        'RIGHT_RING_PINKY_DOWN': ("piano/Cinematic Piano/B4.wav", "B4"),
+
+        'BOTH_THUMB_DOWN': ("piano/Cinematic Piano/C3.wav", "Low C"),
+        'BOTH_INDEX_DOWN': ("piano/Cinematic Piano/D3.wav", "Low D"),
+        'BOTH_ALL_DOWN': ("piano/Cinematic Piano/G3.wav", "Chord G3")
+    },
+
+    'guitar': {
+        'RIGHT_THUMB_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/C#4.wav", "C#4"),
+        'RIGHT_INDEX_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/E4.wav", "E4"),
+        'RIGHT_MIDDLE_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/F2.wav", "F2"),
+        'RIGHT_RING_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/D3.wav", "D3"),
+        'RIGHT_PINKY_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/B2.wav", "B2"),
+
+        'LEFT_THUMB_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/A3.wav", "A3"),
+        'LEFT_INDEX_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/B3.wav", "B3"),
+        'LEFT_MIDDLE_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/C#3.wav", "C#3"),
+        'LEFT_RING_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/D3.wav", "D3"),
+        'LEFT_PINKY_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/E2.wav", "E2"),
+
+        'RIGHT_INDEX_MIDDLE_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/B3B4.wav", "B3B4"),
+        'RIGHT_MIDDLE_RING_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/C#3C#4.wav", "C#3C#4"),
+        'RIGHT_THUMB_INDEX_MIDDLE_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/F2F3.wav", "F2F3"),
+
+        'BOTH_THUMB_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/A3.wav", "A3"),
+        'BOTH_INDEX_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/D5.wav", "D5"),
+        'BOTH_ALL_DOWN': ("acoustic_guitar_sound_pack/acoustic_guitar_sound_pack/E4.wav", "E4")
+    },
+
+    'drum': {
+        'RIGHT_THUMB_DOWN': ("Real Drums Vol. 1/Kick/RD_K_1.wav", "Kick 1"),
+        'RIGHT_INDEX_DOWN': ("Real Drums Vol. 1/Claps/RD_C_1.wav", "Clap"),
+        'RIGHT_MIDDLE_DOWN': ("Real Drums Vol. 1/Cymbals/Crash/RD_C_C_1.wav", "Crash"),
+        'RIGHT_RING_DOWN': ("Real Drums Vol. 1/Cymbals/Hi Hat/RD_C_HH_15.wav", "Hi-Hat 15"),
+        'RIGHT_PINKY_DOWN': ("Real Drums Vol. 1/Cymbals/Splash/RD_C_S_1.wav", "Splash 1"),
+
+        'LEFT_THUMB_DOWN': ("Real Drums Vol. 1/Kick/RD_K_10.wav", "Kick 10"),
+        'LEFT_INDEX_DOWN': ("Real Drums Vol. 1/Cymbals/Crash/RD_C_C_9.wav", "Crash 9"),
+        'LEFT_MIDDLE_DOWN': ("Real Drums Vol. 1/Cymbals/Splash/RD_C_S_9.wav", "Splash 9"),
+        'LEFT_RING_DOWN': ("Real Drums Vol. 1/Cymbals/Hi Hat/RD_C_HH_1.wav", "Hi-Hat 1"),
+        'LEFT_PINKY_DOWN': ("Real Drums Vol. 1/Claps/RD_C_1.wav", "Clap 2"),
+
+        'RIGHT_INDEX_MIDDLE_DOWN': ("Real Drums Vol. 1/Percussion/Blast Block/RD_P_BB_1.wav", "Blast Block"),
+        'RIGHT_MIDDLE_RING_DOWN': ("Real Drums Vol. 1/Percussion/Egg Shaker/RD_P_ES_1.wav", "Shaker 1"),
+
+        'BOTH_THUMB_DOWN': ("Real Drums Vol. 1/Percussion/Egg Shaker/RD_P_ES_2.wav", "Shaker 2"),
+        'BOTH_INDEX_DOWN': ("Real Drums Vol. 1/Percussion/Egg Shaker/RD_P_ES_1.wav", "Shaker Combo"),
+        'BOTH_ALL_DOWN': ("Real Drums Vol. 1/Percussion/Egg Shaker/RD_P_ES_2.wav", "Full Hit")
+    }
+}
+
+
+gesture_sounds = {}
+for instrument, gestures in SOUND_PATHS.items():
+    gesture_sounds[instrument] = {}
+    for gesture, (path, note) in gestures.items():
+        try:
+            gesture_sounds[instrument][gesture] = {
+                "sound": pygame.mixer.Sound(path),
+                "note": note
+            }
+        except Exception as e:
+            print(f"Error loading {path}: {e}")
+
+def play_sound_limited(sound_obj, duration=3.0):
+    channel = sound_obj.play()
+    if channel:
+        threading.Thread(target=lambda: (time.sleep(duration), channel.stop()), daemon=True).start()
+
+def choose_instrument():
+    print("Choose an instrument: [p]iano, [g]uitar, [d]rum")
+    while True:
+        choice = input("Enter choice (p/g/d): ").lower().strip()
+        if choice in ['p', 'g', 'd']:
+            return {'p': 'piano', 'g': 'guitar', 'd': 'drum'}[choice]
+        print("Invalid choice!")
+
+def get_finger_states(hand_landmarks, label):
+    thumb_margin = 0.02
+    thumb = (hand_landmarks.landmark[4].x - hand_landmarks.landmark[3].x) > thumb_margin if label == "Right" else (hand_landmarks.landmark[3].x - hand_landmarks.landmark[4].x) > thumb_margin
+    return {
+        'THUMB': thumb,
+        'INDEX': hand_landmarks.landmark[8].y > hand_landmarks.landmark[6].y,
+        'MIDDLE': hand_landmarks.landmark[12].y > hand_landmarks.landmark[10].y,
+        'RING': hand_landmarks.landmark[16].y > hand_landmarks.landmark[14].y,
+        'PINKY': hand_landmarks.landmark[20].y > hand_landmarks.landmark[18].y
+    }
+
+def interpret_gesture(finger_states, hand_label):
+    prefix = hand_label.upper() + "_"
+    fingers = [f for f, down in finger_states.items() if down]
+    if not fingers:
+        return None
+    gesture = prefix + "_".join(fingers) + "_DOWN"
+    if len(fingers) == 5:
+        gesture = prefix + "ALL_DOWN"
+    return gesture
+
+def main():
+    mp_hands = mp.solutions.hands
+    mp_drawing = mp.solutions.drawing_utils
+
+    instrument = choose_instrument()
+    print(f"Starting Gesture Music with {instrument}. Press 'q' to quit.")
+
+    cap = cv2.VideoCapture(0)
+    last_time = 0
+    cooldown = 0.8
+
+    with mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.5, min_tracking_confidence=0.5) as hands:
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                continue
+
+            frame = cv2.flip(frame, 1)
+            img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = hands.process(img_rgb)
+
+            current_time = time.time()
+            if results.multi_hand_landmarks and results.multi_handedness:
+                gestures_this_frame = []
+
+                for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
+                    label = handedness.classification[0].label
+                    finger_states = get_finger_states(hand_landmarks, label)
+                    gesture = interpret_gesture(finger_states, label)
+                    mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+                    if gesture:
+                        gestures_this_frame.append(gesture)
+
+                # --- Play single or combo gestures ---
+                for gesture in gestures_this_frame:
+                    if gesture in gesture_sounds[instrument] and (current_time - last_time > cooldown):
+                        note_info = gesture_sounds[instrument][gesture]
+                        play_sound_limited(note_info["sound"])
+                        print(f"{instrument.capitalize()} - {gesture} → {note_info['note']}")
+                        last_time = current_time
+
+                # --- Two-hand combined gestures ---p
+
+                if len(gestures_this_frame) == 2:
+                    combo_name = "BOTH_ALL_DOWN" if all("ALL_DOWN" in g for g in gestures_this_frame) else "BOTH_" + "_".join([f.split("_")[1] for f in gestures_this_frame]) + "_DOWN"
+                    if combo_name in gesture_sounds[instrument] and (current_time - last_time > cooldown):
+                        note_info = gesture_sounds[instrument][combo_name]
+                        play_sound_limited(note_info["sound"])
+                        print(f"{instrument.capitalize()} - {combo_name} → {note_info['note']}")
+                        last_time = current_time
+
+            cv2.imshow("Gesture Music", frame)
+            if cv2.waitKey(5) & 0xFF == ord('q'):
+                break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()
